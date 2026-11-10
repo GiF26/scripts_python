@@ -1,0 +1,11 @@
+create table carga_planilha
+(
+    ID         int          null,
+    ID_USUARIO int          null,
+    DESCRICAO  varchar(255) null,
+    VALOR      decimal      null,
+    OBSERVACAO varchar(255) null,
+    TIPO       tinyint      null,
+    MES        tinyint      null
+);
+
