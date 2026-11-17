@@ -1,6 +1,9 @@
 from typing import cast
-import pdfplumber
+from pathlib import Path
+
+import shutil
 import pyodbc
+import pdfplumber
 import mysql.connector
 
 # --- CONFIGURAÇÕES ---
@@ -32,7 +35,7 @@ def limpar_valor(valor_texto):
 
 ########################### Processo ###########################
 
-def carregar_saidas(caminho_pdf):
+def carregar_saidas(caminho_pdf, mes):
     saidas = []
     contador = 1
 
@@ -55,7 +58,7 @@ def carregar_saidas(caminho_pdf):
                     "valor": valor,
                     "observacao": observacao,
                     "tipo": 1,
-                    "mes": 1
+                    "mes": mes
                 })
 
                 contador += 1
@@ -63,7 +66,7 @@ def carregar_saidas(caminho_pdf):
     return saidas
 
 
-def carregar_entradas(caminho_pdf):
+def carregar_entradas(caminho_pdf, mes):
     entradas = []
     ler_entradas = False
     contador = 1
@@ -77,6 +80,9 @@ def carregar_entradas(caminho_pdf):
                 continue
 
             if ler_entradas:
+                if linha[0] and "Tabela para gerar gráfico" in linha[0]:
+                    break
+
                 if linha[0] and linha[0] not in ["Descrição", "Total", "Total - Divida"]:
                     desc = linha[0]
                     valor = limpar_valor(linha[1])
@@ -93,7 +99,7 @@ def carregar_entradas(caminho_pdf):
                         "valor": valor,
                         "observacao": obs,
                         "tipo": 0,
-                        "mes": 1
+                        "mes": mes
                     })
 
                     contador += 1  # Incrementa o contador aqui dentro
@@ -134,26 +140,31 @@ def gravar(registros: list) -> None:
 
 def main() -> None:
     print("Iniciando leitura do PDF...")
-    lista_entradas = carregar_entradas(ARQUIVO_PDF)
-    lista_saidas = carregar_saidas(ARQUIVO_PDF)
 
-    print(f"\n--- ENTRADAS ENCONTRADAS ({len(lista_entradas)}) ---")
-    for e in lista_entradas:
-        print(e)
+    pasta_relatorios = Path("relatorios")
+    i = 0;
 
-    print(f"\n--- SAÍDAS ENCONTRADAS ({len(lista_saidas)}) ---")
-    for s in lista_saidas:
-        print(s)
+    # .glob("*.pdf") busca automaticamente TODOS os arquivos que terminam com .pdf na pasta
+    for arquivo_pdf in pasta_relatorios.glob("*.pdf"):
+        print(f"\n📄 Processando arquivo: {arquivo_pdf.name}")
 
-    # Gravando todas as entradas e saídas no banco de dados de uma só vez
-    print("\nGravando Entradas no banco...")
-    gravar(lista_entradas)
+        i += 1
+        # Passamos 'arquivo_pdf' (o caminho dinâmico) para as suas funções
+        lista_entradas = carregar_entradas(arquivo_pdf, i)
+        lista_saidas = carregar_saidas(arquivo_pdf, i)
 
-    print("Gravando Saídas no banco...")
-    gravar(lista_saidas)
+        print(f"Entradas encontradas: {len(lista_entradas)} | Saídas encontradas: {len(lista_saidas)}")
 
-    print("\n🎉 Carga concluída com sucesso!")
+        # Grava no MySQL os dados deste arquivo
+        gravar(lista_entradas)
+        gravar(lista_saidas)
 
+        # Dentro do loop, logo após o gravar():
+        pasta_destino = Path("relatorios/processados")
+        pasta_destino.mkdir(exist_ok=True)  # Cria a pasta 'processados' se não existir
+        shutil.move(str(arquivo_pdf), str(pasta_destino / arquivo_pdf.name))
+
+    print("\n🎉 Todos os arquivos da pasta foram processados e gravados com sucesso!")
 
 if __name__ == "__main__":
     main()
